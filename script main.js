@@ -510,10 +510,13 @@ window.muralAdminClear = muralAdminClear;
 
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   🎀  QUIZ DA DEBUTANTE
+   🎀  QUIZ DA DEBUTANTE — respostas salvas no SheetDB ☁️
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
-const QUIZ_KEY = 'm15_quiz';
+/* SheetDB — aba "quiz" na mesma planilha
+   Colunas necessárias: id | ci | expl
+   No Google Sheets: crie uma segunda aba chamada exatamente "quiz" */
+const SHEETDB_QUIZ_URL = 'https://sheetdb.io/api/v1/gtbjsmr0fzsth?sheet=quiz';
 
 const QUIZ_QUESTIONS = [
   { id:1, q:'Qual é a cor favorita da debutante?',
@@ -536,15 +539,49 @@ const QUIZ_QUESTIONS = [
 
 let QS = { q: 0, answers: [], done: false };
 
-const getQuizSaved  = () => { try { return JSON.parse(localStorage.getItem(QUIZ_KEY) || '{}'); } catch { return {}; } };
-const saveQuizData  = d  => localStorage.setItem(QUIZ_KEY, JSON.stringify(d));
+/* ── Buscar respostas da nuvem ── */
+async function fetchQuizAnswers() {
+  try {
+    const res  = await fetch(SHEETDB_QUIZ_URL);
+    const data = await res.json();
+    if (!Array.isArray(data) || data.length === 0) return {};
+    const map = {};
+    data.forEach(row => {
+      if (row.id !== undefined) map[row.id] = { ci: parseInt(row.ci), expl: row.expl || '' };
+    });
+    return map;
+  } catch { return {}; }
+}
 
-function initQuiz() {
-  /* Carrega respostas salvas pela debutante */
-  const saved = getQuizSaved();
-  QUIZ_QUESTIONS.forEach(q => {
-    if (saved[q.id] !== undefined) { q.ci = saved[q.id].ci; q.expl = saved[q.id].expl || ''; }
+/* ── Salvar respostas na nuvem ── */
+async function saveQuizAnswersCloud(data) {
+  /* Apaga tudo e reescreve */
+  try {
+    await fetch('https://sheetdb.io/api/v1/gtbjsmr0fzsth/all?sheet=quiz', { method: 'DELETE' });
+  } catch {}
+  const rows = Object.entries(data).map(([id, val]) => ({
+    id: String(id), ci: String(val.ci), expl: val.expl || ''
+  }));
+  await fetch(SHEETDB_QUIZ_URL, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ data: rows })
   });
+}
+
+/* ── Inicializar quiz ── */
+async function initQuiz() {
+  const box = document.getElementById('quizContainer');
+  if (box) box.innerHTML = '<div class="quiz-loading"><div class="quiz-spinner"></div></div>';
+
+  const saved = await fetchQuizAnswers();
+  QUIZ_QUESTIONS.forEach(q => {
+    if (saved[q.id] !== undefined) {
+      q.ci   = saved[q.id].ci;
+      q.expl = saved[q.id].expl || '';
+    }
+  });
+
   renderQuiz();
   const adminBtn = document.getElementById('quizAdminBtn');
   if (adminBtn) adminBtn.addEventListener('click', openQuizAdmin);
@@ -597,10 +634,10 @@ function renderQuiz() {
 }
 
 function answerQuiz(idx) {
-  const q      = QUIZ_QUESTIONS[QS.q];
-  const right  = idx === q.ci;
-  const opts   = document.querySelectorAll('.quiz-opt');
-  const fb     = document.getElementById('quizFb');
+  const q     = QUIZ_QUESTIONS[QS.q];
+  const right = idx === q.ci;
+  const opts  = document.querySelectorAll('.quiz-opt');
+  const fb    = document.getElementById('quizFb');
 
   opts.forEach((b, i) => {
     b.disabled = true;
@@ -624,7 +661,7 @@ function answerQuiz(idx) {
 }
 
 function renderResult() {
-  const box    = document.getElementById('quizContainer');
+  const box     = document.getElementById('quizContainer');
   const acertos = QS.answers.filter(a => a.right).length;
   const total   = QUIZ_QUESTIONS.length;
   const pct     = Math.round((acertos / total) * 100);
@@ -668,12 +705,11 @@ function renderResult() {
 function retryQuiz() { QS = { q:0, answers:[], done:false }; renderQuiz(); }
 window.retryQuiz = retryQuiz;
 
-
-/* ── QUIZ ADMIN — debutante configura as respostas ──────── */
+/* ── QUIZ ADMIN — debutante configura as respostas ── */
 function openQuizAdmin() {
   const pwd = prompt('🔒 Senha para configurar o quiz:');
   if (pwd === null) return;
-  if (pwd !== 'debutante15') { alert('Senha incorreta! A senha padrão é: debutante15\n(você pode alterá-la no código)'); return; }
+  if (pwd !== 'debutante15') { alert('Senha incorreta! A senha padrão é: debutante15'); return; }
 
   const overlay = document.createElement('div');
   overlay.id = 'qaOverlay';
@@ -684,7 +720,7 @@ function openQuizAdmin() {
       <div class="qa-header">
         <span class="s-label">✦ Painel da Debutante</span>
         <h2 class="qa-title">Configurar Quiz</h2>
-        <p class="qa-sub">Marque a resposta certa de cada pergunta e, se quiser, adicione uma explicação divertida que aparecerá após a resposta.</p>
+        <p class="qa-sub">Marque a resposta certa de cada pergunta e, se quiser, adicione uma explicação divertida!</p>
       </div>
       <div class="qa-questions" id="qaQuestions"></div>
       <div class="qa-footer">
@@ -714,7 +750,6 @@ function openQuizAdmin() {
       <input class="qa-expl-input" id="expl_${q.id}" type="text" maxlength="120"
              placeholder="Ex.: Minha cor favorita desde pequena! 🌸"
              value="${escHtml(q.expl || '')}">`;
-    /* Highlight ao selecionar */
     sec.querySelectorAll('input[type=radio]').forEach(radio => {
       radio.addEventListener('change', () => {
         sec.querySelectorAll('.qa-opt-lbl').forEach(l => l.classList.remove('selected'));
@@ -735,9 +770,9 @@ function closeQuizAdmin() {
 }
 window.closeQuizAdmin = closeQuizAdmin;
 
-function saveQuizAdmin() {
-  const data = {};
-  let allSet = true;
+async function saveQuizAdmin() {
+  const data   = {};
+  let allSet   = true;
   QUIZ_QUESTIONS.forEach(q => {
     const r = document.querySelector(`input[name="q${q.id}"]:checked`);
     if (!r) { allSet = false; return; }
@@ -746,18 +781,33 @@ function saveQuizAdmin() {
     data[q.id] = { ci: q.ci, expl: q.expl };
   });
   if (!allSet) { alert('Por favor, selecione a resposta correta para todas as perguntas! 😊'); return; }
-  saveQuizData(data);
-  closeQuizAdmin();
-  QS = { q:0, answers:[], done:false };
-  setTimeout(() => {
-    renderQuiz();
-    const btn = document.getElementById('quizAdminBtn');
-    if (btn) {
-      btn.innerHTML = '<i class="fas fa-check"></i> <span>Quiz publicado! 🎉</span>';
-      btn.style.background = 'linear-gradient(135deg,#5aaa7a,#7dca9d)';
-      setTimeout(() => { btn.innerHTML = '<i class="fas fa-cog"></i> <span>Configurar Quiz</span>'; btn.style.background = ''; }, 3500);
-    }
-  }, 400);
+
+  /* Feedback de salvando */
+  const saveBtn = document.querySelector('.qa-footer .btn-gold-filled');
+  if (saveBtn) { saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Salvando...'; saveBtn.disabled = true; }
+
+  try {
+    await saveQuizAnswersCloud(data);
+    closeQuizAdmin();
+    QS = { q:0, answers:[], done:false };
+    setTimeout(async () => {
+      /* Recarrega respostas da nuvem para confirmar */
+      const saved = await fetchQuizAnswers();
+      QUIZ_QUESTIONS.forEach(q => {
+        if (saved[q.id] !== undefined) { q.ci = saved[q.id].ci; q.expl = saved[q.id].expl || ''; }
+      });
+      renderQuiz();
+      const btn = document.getElementById('quizAdminBtn');
+      if (btn) {
+        btn.innerHTML = '<i class="fas fa-check"></i> <span>Quiz publicado! 🎉</span>';
+        btn.style.background = 'linear-gradient(135deg,#5aaa7a,#7dca9d)';
+        setTimeout(() => { btn.innerHTML = '<i class="fas fa-cog"></i> <span>Configurar Quiz</span>'; btn.style.background = ''; }, 3500);
+      }
+    }, 400);
+  } catch {
+    alert('Erro ao salvar. Verifique sua conexão e tente novamente.');
+    if (saveBtn) { saveBtn.innerHTML = '<i class="fas fa-heart"></i> Salvar e publicar!'; saveBtn.disabled = false; }
+  }
 }
 window.saveQuizAdmin = saveQuizAdmin;
 
