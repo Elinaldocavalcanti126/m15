@@ -202,9 +202,98 @@ function runFilter() {
 }
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   💚  PIX — PAYLOAD EMV REAL (padrão Banco Central)
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   🎁  SISTEMA DE PRESENTEAR — marcar e eliminar da lista
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+const GIFT_STORAGE_KEY = 'meus15anos_presentados';
 
+/* Carrega a lista de presentes já dados do localStorage */
+function getPresentados() {
+  try { return JSON.parse(localStorage.getItem(GIFT_STORAGE_KEY) || '[]'); } catch { return []; }
+}
+
+/* Salva a lista */
+function savePresentados(arr) {
+  localStorage.setItem(GIFT_STORAGE_KEY, JSON.stringify(arr));
+}
+
+/* Atualiza o contador de disponíveis */
+function updateGiftsCounter() {
+  const counter = document.getElementById('giftsCounter');
+  if (!counter) return;
+  const total       = document.querySelectorAll('.g-item').length;
+  const marcados    = document.querySelectorAll('.g-item.presentado').length;
+  const disponiveis = total - marcados;
+  counter.innerHTML = marcados > 0
+    ? `<strong>${disponiveis}</strong> de ${total} presentes ainda disponíveis`
+    : `<strong>${total}</strong> presentes na lista`;
+}
+
+/* Marca um presente como dado (com animação) */
+function marcarPresentado(item) {
+  const nome  = item.dataset.name;
+  const lista = getPresentados();
+  if (lista.includes(nome)) return;
+  lista.push(nome);
+  savePresentados(lista);
+
+  /* Animação de saída suave */
+  item.style.transition = 'opacity .5s ease, transform .5s ease';
+  item.style.opacity    = '0.4';
+  item.style.transform  = 'scale(.97)';
+  setTimeout(() => {
+    item.classList.add('presentado');
+    item.style.opacity = ''; item.style.transform = '';
+    updateGiftsCounter();
+    launchPetals();
+  }, 400);
+}
+
+/* Restaura todos os presentes (admin) */
+function resetPresentados() {
+  if (!confirm('Restaurar todos os presentes para disponível?')) return;
+  savePresentados([]);
+  document.querySelectorAll('.g-item.presentado').forEach(item => {
+    item.classList.remove('presentado');
+  });
+  updateGiftsCounter();
+}
+window.resetPresentados = resetPresentados;
+
+/* Inicializa o sistema ao carregar */
+function initGiftMarking() {
+  const presentados = getPresentados();
+
+  document.querySelectorAll('.g-item').forEach(item => {
+    /* Restaura estado salvo */
+    if (presentados.includes(item.dataset.name)) {
+      item.classList.add('presentado');
+    }
+
+    /* Cria botão "Marcar como presentado" */
+    const btn = document.createElement('button');
+    btn.type      = 'button';
+    btn.className = 'g-mark-btn';
+    btn.innerHTML = '<i class="fas fa-check"></i> Presentado';
+    btn.title     = 'Marcar este presente como já dado';
+    btn.setAttribute('aria-label', `Marcar "${item.dataset.name}" como presentado`);
+
+    btn.addEventListener('click', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      marcarPresentado(item);
+    });
+
+    item.appendChild(btn);
+  });
+
+  updateGiftsCounter();
+}
+
+/* Chama ao carregar a página */
+document.addEventListener('DOMContentLoaded', initGiftMarking);
+
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    Dados da recebedora:
    Chave  : CPF 12964137480
    Nome   : Maria Eduarda Carvalho de Santana
